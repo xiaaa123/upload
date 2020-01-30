@@ -4,7 +4,8 @@
     <el-button type="primary" @click="handleUpload">上传</el-button>
 
     <div>
-
+      <div>总进度</div>
+      <el-progress :percentage="uploadPercentage"></el-progress>
       <el-table :data="chunks">
       <el-table-column
         prop="hash"
@@ -47,6 +48,16 @@ export default {
       return Number((val / 1024).toFixed(0));
     }
   },
+  computed: {
+       uploadPercentage() {
+          if (!this.container.file || !this.chunks.length) return 0;
+          const loaded = this.chunks
+            .map(item => item.size * item.progress)
+            .reduce((acc, cur) => acc + cur);
+          return parseInt((loaded / this.container.file.size).toFixed(2));
+        }
+  },
+
   methods: {
     handleFileChange(e) {
       const [file] = e.target.files;
