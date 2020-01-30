@@ -10,7 +10,7 @@ export function request({
 }) {
     return new Promise(resolve => {
         const xhr = new XMLHttpRequest();
-        xhr.onProgress = onProgress
+        xhr.upload.onprogress = onProgress
         xhr.open(method, url);
         Object.keys(headers).forEach(key =>
             xhr.setRequestHeader(key, headers[key])
