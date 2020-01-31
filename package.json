@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start":"npm run serve & nodemon server/server.js",
+    "start": "npm run serve & nodemon server/server.js",
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
     "lint": "vue-cli-service lint"
   },
   "dependencies": {
+    "axios": "^0.19.2",
     "core-js": "^3.4.4",
     "element-ui": "^2.4.5",
     "fs-extra": "^8.1.0",

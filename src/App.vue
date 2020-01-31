@@ -32,9 +32,17 @@
 
 <script>
 import { request } from "./util";
-// @todo size切分
+import axios from 'axios'
+// ~@todo axios发送请求  
 // @todo canvas方块进度条
 // @todo 并发量控制+报错重试
+// @todo 上传失败文件碎片的清理工作（垃圾文件每天清理）
+// @todo 大文件的hash值计算 （三分+名字+size）或者每10M三分 节省时间 第一块和最后一块
+// @todo 计算哈希 使用time-slice
+const $axios = axios.create({
+  baseURL: 'http://localhost:3000',
+})
+
 const SIZE = 3 * 1024 * 1024;
 export default {
   data: () => ({
@@ -83,13 +91,11 @@ export default {
           form.append("filename", this.container.file.name);
           return {form,index};
         })
-        .map(({form,index}) => request({ 
-          url: "http://localhost:3000/upload", 
-          data: form,
-          onProgress:this.createProgresshandler(this.chunks[index])
+        .map(({form,index}) => $axios.post('/upload',form, {
+          onUploadProgress:this.createProgresshandler(this.chunks[index])
         }))
+        
       const ret = await Promise.all(list)
-      console.log(ret)
       await this.mergeRequest();
     },
     createProgresshandler(item){
@@ -99,19 +105,16 @@ export default {
       }
     },
     async mergeRequest() {
-      await request({
-        url: "http://localhost:3000/merge",
-        headers: {
-          "content-type": "application/json"
-        },
-        data: JSON.stringify({
+      await $axios.post('/merge',{
           filename: this.container.file.name,
           size:SIZE
         })
-      });
+
     },
     async handleUpload() {
       if (!this.container.file) return;
+      console.log(Object.keys(this.container.file))
+      // return 
       const chunks = this.createFileChunk(this.container.file);
 
       this.chunks = chunks.map((chunk, index) => ({
