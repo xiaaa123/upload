@@ -1,7 +1,7 @@
 const path = require('path')
 const fse = require("fs-extra")
 const multiparty = require("multiparty")
-const { resolvePost, pipeStream,extractExt,getUploadedList } = require('./util')
+const { resolvePost, pipeStream,extractExt,getUploadedList,mergeFiles } = require('./util')
 
   
 
@@ -13,26 +13,13 @@ class Controller {
   async mergeFileChunk(filePath, fileHash, size){
     // cpmspe/pg)
     const chunkDir = path.resolve(this.UPLOAD_DIR, fileHash)
-    const chunkPaths = await fse.readdir(chunkDir)
+    let chunkPaths = await fse.readdir(chunkDir)
     // 根据切片下标进行排序
     // 否则直接读取目录的获得的顺序可能会错乱
-    chunkPaths.sort((a, b) => a.split("-")[1] - b.split("-")[1])
-    console.log(chunkPaths)
-    await Promise.all(
-      chunkPaths.map((chunkPath, index) =>
-        pipeStream(
-          path.resolve(chunkDir, chunkPath),
-          // 指定位置创建可写流 加一个put避免文件夹和文件重名
-          // hash后不存在这个问题，因为文件夹没有后缀
-          // fse.createWriteStream(path.resolve(filePath, '../', 'out' + filename), {
-          fse.createWriteStream(filePath, {
-            start: index * size,
-            end: (index + 1) * size
-          })
-        )
-      )
-    )
-    // fse.rmdirSync(chunkDir) // 合并后删除保存切片的目录
+    chunkPaths
+      .sort((a, b) => a.split("-")[1] - b.split("-")[1])
+    chunkPaths = chunkPaths.map(cp=>path.resolve(chunkDir, cp)) // 转成文件路径
+    await mergeFiles(chunkPaths,filePath,size)
   }
 
 
