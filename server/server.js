@@ -33,6 +33,14 @@ const mergeFileChunk = async (filePath, fileHash, size) => {
   // fse.rmdirSync(chunkDir); // 合并后删除保存切片的目录
 };
 
+  // 返回已经上传切片名列表
+ const getUploadedList = async hash =>
+   fse.existsSync(path.resolve(UPLOAD_DIR, hash))
+    ? await fse.readdir(path.resolve(UPLOAD_DIR, hash))
+    : [];
+
+
+
 const extractExt = filename => filename.slice(filename.lastIndexOf("."), filename.length)
 server.on("request", async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*")
@@ -101,12 +109,17 @@ server.on("request", async (req, res) => {
 
       // 文件是否存在
       let uploaded = false
+      let uploadedList = []
       if (fse.existsSync(filePath)) {
         uploaded = true
+      }else{
+        // 文件没有完全上传完毕，但是可能存在部分切片上传完毕了
+        uploadedList = await getUploadedList(hash)
       }
       res.end(
         JSON.stringify({
-          uploaded
+          uploaded,
+          uploadedList
         })
       );
 

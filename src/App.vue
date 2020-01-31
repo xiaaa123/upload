@@ -2,40 +2,36 @@
   <div>
     <h1>测试</h1>
     <input type="file" @change="handleFileChange" />
-    <el-button type="primary" @click="handleUpload">上传</el-button>
-
+    <el-button type="primary" @click="handleUpload" :disabled="uploadDisabled">上传</el-button>
+    <el-button @click="handleResume" v-if="status === Status.pause">恢复</el-button>
+    <el-button
+      v-else
+      :disabled="status !== Status.uploading || !container.hash"
+      @click="handlePause"
+    >暂停</el-button>
     <div>
       <div>计算文件 hash</div>
       <el-progress :percentage="hashProgress"></el-progress>
       <div>总进度</div>
       <el-progress :percentage="uploadPercentage"></el-progress>
       <el-table :data="chunks">
-      <el-table-column
-        prop="hash"
-        label="切片hash"
-        align="center"
-      ></el-table-column>
-      <el-table-column label="大小(KB)" align="center" width="120">
-        <template v-slot="{ row }">
-          {{ row.size |transformByte}}
-        </template>
-      </el-table-column>
-      <el-table-column label="进度" align="center">
-        <template v-slot="{ row }">
-          <el-progress
-            :percentage="row.progress"
-            color="#909399"
-          ></el-progress>
-        </template>
-      </el-table-column>
-    </el-table>
+        <el-table-column prop="hash" label="切片hash" align="center"></el-table-column>
+        <el-table-column label="大小(KB)" align="center" width="120">
+          <template v-slot="{ row }">{{ row.size |transformByte}}</template>
+        </el-table-column>
+        <el-table-column label="进度" align="center">
+          <template v-slot="{ row }">
+            <el-progress :percentage="row.progress" color="#909399"></el-progress>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
   </div>
 </template>
 
 <script>
-import { request,post } from "./util";
-import SparkMd5 from 'spark-md5'
+import { request, post } from "./util";
+import SparkMd5 from "spark-md5";
 // import axios from 'axios'
 
 // @todo size切分
@@ -48,19 +44,28 @@ import SparkMd5 from 'spark-md5'
 
 // @todo size大小动态调配 根据网速，慢启动
 
-
 // const request = axios.create({
 //   baseURL: 'https://some-domain.com/api/',
 // })
 
 const SIZE = 3 * 1024 * 1024;
+const Status = {
+  wait: "wait",
+  pause: "pause",
+  uploading: "uploading"
+};
 export default {
   data: () => ({
     container: {
       file: null
     },
     chunks: [],
-    hashProgress:0
+    hashProgress: 0,
+    // 请求列表，方便随时abort
+    requestList: [],
+    Status,
+    // 默认状态
+    status: Status.wait
   }),
   filters: {
     transformByte(val) {
@@ -68,16 +73,37 @@ export default {
     }
   },
   computed: {
-       uploadPercentage() {
-          if (!this.container.file || !this.chunks.length) return 0;
-          const loaded = this.chunks
-            .map(item => item.size * item.progress)
-            .reduce((acc, cur) => acc + cur);
-          return parseInt((loaded / this.container.file.size).toFixed(2));
-        }
+    uploadDisabled() {
+      return (
+        !this.container.file ||
+        [Status.pause, Status.uploading].includes(this.status)
+      );
+    },
+    uploadPercentage() {
+      if (!this.container.file || !this.chunks.length) return 0;
+      const loaded = this.chunks
+        .map(item => item.size * item.progress)
+        .reduce((acc, cur) => acc + cur);
+      return parseInt((loaded / this.container.file.size).toFixed(2));
+    }
   },
 
   methods: {
+    async handleResume() {
+      this.status = Status.uploading
+
+      const { uploadedList } = await this.verify(
+        this.container.file.name,
+        this.container.hash
+      );
+      await this.uploadChunks(uploadedList);
+    },
+    handlePause() {
+      this.status = Status.pause
+
+      this.requestList.forEach(xhr => xhr?.abort());
+      this.requestList = [];
+    },
     handleFileChange(e) {
       const [file] = e.target.files;
       if (!file) return;
@@ -91,41 +117,46 @@ export default {
         chunks.push({ file: file.slice(cur, cur + size) });
         cur += size;
       }
-      console.log(chunks)
-      console.log(chunks.map(v=>v.file))
       return chunks;
     },
-    async uploadChunks() {
+    async uploadChunks(uploadedList) {
+      console.log(this.chunks);
       const list = this.chunks
+        .filter(chunk => uploadedList.indexOf(chunk.hash) == -1)
         .map(({ chunk, hash, index }, i) => {
           const form = new FormData();
           form.append("chunk", chunk);
           form.append("hash", hash);
           form.append("filename", this.container.file.name);
           form.append("fileHash", this.container.hash);
-          return {form,index};
+          return { form, index };
         })
-        .map(({form,index}) => request({ 
-          url: "/upload", 
-          data: form,
-          onProgress:this.createProgresshandler(this.chunks[index])
-        }))
-      const ret = await Promise.all(list)
-      await this.mergeRequest();
-    },
-    createProgresshandler(item){
-      return e=>{
-        console.log(e,item)
-        item.progress = parseInt(String((e.loaded / e.total) * 100))
+        .map(({ form, index }) =>
+          request({
+            url: "/upload",
+            data: form,
+            onProgress: this.createProgresshandler(this.chunks[index]),
+            requestList: this.requestList
+          })
+        );
+      const ret = await Promise.all(list);
+      if (uploadedList.length + list.length === this.chunks.length) {
+        // 上传和已经存在之和 等于全部的再合并
+        await this.mergeRequest();
       }
+    },
+    createProgresshandler(item) {
+      return e => {
+        item.progress = parseInt(String((e.loaded / e.total) * 100));
+      };
     },
 
     async mergeRequest() {
-      await post('/merge',{
+      await post("/merge", {
         filename: this.container.file.name,
-          size:SIZE,
-          fileHash: this.container.hash,
-      })
+        size: SIZE,
+        fileHash: this.container.hash
+      });
       // await request({
       //   url: "/merge",
       //   headers: {
@@ -137,47 +168,52 @@ export default {
       //   })
       // });
     },
-    async calculateHash(chunks){
-      return new Promise(resolve=>{
+    async calculateHash(chunks) {
+      return new Promise(resolve => {
         // web-worker 防止卡顿主线程
-        this.container.workder = new Worker('/hash.js')
-        this.container.workder.postMessage({chunks})
-        this.container.workder.onmessage = e=>{
-          const {progress, hash} = e.data
-          this.hashProgress = Number(progress.toFixed(2))
-          if(hash){
-            resolve(hash)
+        this.container.workder = new Worker("/hash.js");
+        this.container.workder.postMessage({ chunks });
+        this.container.workder.onmessage = e => {
+          const { progress, hash } = e.data;
+          this.hashProgress = Number(progress.toFixed(2));
+          if (hash) {
+            resolve(hash);
           }
-        }
-      })
+        };
+      });
     },
-    async verify(filename,hash){
-      const data = await post('/verify',{filename,hash})
-      return data
+    async verify(filename, hash) {
+      const data = await post("/verify", { filename, hash });
+      return data;
     },
     async handleUpload() {
       if (!this.container.file) return;
+      this.status = Status.uploading;
       const chunks = this.createFileChunk(this.container.file);
 
       // 计算哈希
-      this.container.hash = await this.calculateHash(chunks)
+      this.container.hash = await this.calculateHash(chunks);
 
-      // 判断文件是否存在
-      const {uploaded} = await this.verify(this.container.file.name, this.container.hash)
+      // 判断文件是否存在,如果不存在，获取已经上传的切片
+      const { uploaded, uploadedList } = await this.verify(
+        this.container.file.name,
+        this.container.hash
+      );
 
-      if(uploaded){
-        return this.$message.success('秒传:上传成功')
+      if (uploaded) {
+        return this.$message.success("秒传:上传成功");
       }
       this.chunks = chunks.map((chunk, index) => ({
         fileHash: this.container.hash,
         chunk: chunk.file,
         index,
         hash: this.container.hash + "-" + index,
-        progress:0,
-        size:chunk.file.size
+        progress: 0,
+        size: chunk.file.size
       }));
       // console.log(this.chunks)
-      await this.uploadChunks();
+      // 传入已经存在的切片清单
+      await this.uploadChunks(uploadedList);
     }
   }
 };
