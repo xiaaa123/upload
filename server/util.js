@@ -1,25 +1,30 @@
-const path = require('path')
 const fse = require("fs-extra")
 exports.resolvePost = req =>
   new Promise(resolve => {
-    let chunk = "";
+    let chunk = ""
     req.on("data", data => {
-      chunk += data;
-    });
+      chunk += data
+    })
     req.on("end", () => {
-      resolve(JSON.parse(chunk));
-    });
-  });
+      resolve(JSON.parse(chunk))
+    })
+  })
 
-const pipeStream = (path, writeStream) =>
+exports.pipeStream = (filePath, writeStream) =>
   new Promise(resolve => {
-    const readStream = fse.createReadStream(path);
+    const readStream = fse.createReadStream(filePath)
     readStream.on("end", () => {
-      fse.unlinkSync(path);
-      resolve();
-    });
-    readStream.pipe(writeStream);
-  });
+      fse.unlinkSync(filePath)
+      resolve()
+    })
+    readStream.pipe(writeStream)
+  })
 
+  // 返回已经上传切片名列表
 
-exports.pipeStream = pipeStream
+exports.getUploadedList = async (dirPath)=>{
+    return fse.existsSync(dirPath) 
+      ? (await fse.readdir(dirPath)).filter(name=>name[0]!=='.') // 过滤诡异的隐藏文件
+      : []
+  }
+exports.extractExt = filename => filename.slice(filename.lastIndexOf("."), filename.length)
