@@ -21,15 +21,15 @@ const pipeStream = (filePath, writeStream) =>
     })
     readStream.pipe(writeStream)
   })
-exports.mergeFiles = async (chunkPaths,filePath,size)=>{
+exports.mergeFiles = async (files,dest,size)=>{
   await Promise.all(
-    chunkPaths.map((chunkPath, index) =>
+    files.map((file, index) =>
       pipeStream(
-        chunkPath,
+        file,
         // 指定位置创建可写流 加一个put避免文件夹和文件重名
         // hash后不存在这个问题，因为文件夹没有后缀
-        // fse.createWriteStream(path.resolve(filePath, '../', 'out' + filename), {
-        fse.createWriteStream(filePath, {
+        // fse.createWriteStream(path.resolve(dest, '../', 'out' + filename), {
+        fse.createWriteStream(dest, {
           start: index * size,
           end: (index + 1) * size
         })
