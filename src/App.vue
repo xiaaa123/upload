@@ -13,7 +13,7 @@
       <div>计算文件 hash</div>
       <el-progress :percentage="hashProgress"></el-progress>
       <div>总进度</div>
-      <el-progress :percentage="uploadPercentage"></el-progress>
+      <el-progress :percentage="fakeProgress"></el-progress>
       <el-table :data="chunks">
         <el-table-column prop="hash" label="切片hash" align="center"></el-table-column>
         <el-table-column label="大小(KB)" align="center" width="120">
@@ -21,7 +21,7 @@
         </el-table-column>
         <el-table-column label="进度" align="center">
           <template v-slot="{ row }">
-            <el-progress :percentage="row.progress" color="#909399"></el-progress>
+            <el-progress :percentage="row.progress"></el-progress>
           </template>
         </el-table-column>
       </el-table>
@@ -65,7 +65,8 @@ export default {
     requestList: [],
     Status,
     // 默认状态
-    status: Status.wait
+    status: Status.wait,
+    fakeProgress:0
   }),
   filters: {
     transformByte(val) {
@@ -79,12 +80,19 @@ export default {
         [Status.pause, Status.uploading].includes(this.status)
       );
     },
-    uploadPercentage() {
+    uploadProgress() {
       if (!this.container.file || !this.chunks.length) return 0;
       const loaded = this.chunks
         .map(item => item.size * item.progress)
         .reduce((acc, cur) => acc + cur);
       return parseInt((loaded / this.container.file.size).toFixed(2));
+    }
+  },
+  watch:{
+    uploadProgress(now){
+      if(now>this.fakeProgress){
+        this.fakeProgress =now
+      }
     }
   },
 
@@ -203,14 +211,21 @@ export default {
       if (uploaded) {
         return this.$message.success("秒传:上传成功");
       }
-      this.chunks = chunks.map((chunk, index) => ({
-        fileHash: this.container.hash,
-        chunk: chunk.file,
-        index,
-        hash: this.container.hash + "-" + index,
-        progress: 0,
-        size: chunk.file.size
-      }));
+      this.chunks = chunks.map((chunk, index) => {
+        const chunkName = this.container.hash + "-" + index
+        return       {
+          fileHash: this.container.hash,
+          chunk: chunk.file,
+          index,
+          hash: chunkName,
+          progress: uploadedList.indexOf(chunkName)>-1?100:0,
+          size: chunk.file.size
+        }
+      }
+      
+
+      );
+      console.log(this.chunks)
       // console.log(this.chunks)
       // 传入已经存在的切片清单
       await this.uploadChunks(uploadedList);
