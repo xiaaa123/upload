@@ -34,7 +34,7 @@
 </template>
 
 <script>
-import { request } from "./util";
+import { request,post } from "./util";
 import SparkMd5 from 'spark-md5'
 // import axios from 'axios'
 
@@ -102,15 +102,15 @@ export default {
           form.append("chunk", chunk);
           form.append("hash", hash);
           form.append("filename", this.container.file.name);
+          form.append("fileHash", this.container.hash);
           return {form,index};
         })
         .map(({form,index}) => request({ 
-          url: "http://localhost:3000/upload", 
+          url: "/upload", 
           data: form,
           onProgress:this.createProgresshandler(this.chunks[index])
         }))
       const ret = await Promise.all(list)
-      console.log(ret)
       await this.mergeRequest();
     },
     createProgresshandler(item){
@@ -119,17 +119,23 @@ export default {
         item.progress = parseInt(String((e.loaded / e.total) * 100))
       }
     },
+
     async mergeRequest() {
-      await request({
-        url: "http://localhost:3000/merge",
-        headers: {
-          "content-type": "application/json"
-        },
-        data: JSON.stringify({
-          filename: this.container.file.name,
-          size:SIZE
-        })
-      });
+      await post('/merge',{
+        filename: this.container.file.name,
+          size:SIZE,
+          fileHash: this.container.hash,
+      })
+      // await request({
+      //   url: "/merge",
+      //   headers: {
+      //     "content-type": "application/json"
+      //   },
+      //   data: JSON.stringify({
+      //     filename: this.container.file.name,
+      //     size:SIZE
+      //   })
+      // });
     },
     async calculateHash(chunks){
       return new Promise(resolve=>{
@@ -145,17 +151,28 @@ export default {
         }
       })
     },
+    async verify(filename,hash){
+      const data = await post('/verify',{filename,hash})
+      return data
+    },
     async handleUpload() {
       if (!this.container.file) return;
       const chunks = this.createFileChunk(this.container.file);
 
       // 计算哈希
       this.container.hash = await this.calculateHash(chunks)
+
+      // 判断文件是否存在
+      const {uploaded} = await this.verify(this.container.file.name, this.container.hash)
+
+      if(uploaded){
+        return this.$message.success('秒传:上传成功')
+      }
       this.chunks = chunks.map((chunk, index) => ({
         fileHash: this.container.hash,
         chunk: chunk.file,
         index,
-        hash: this.container.file.name + "-" + index,
+        hash: this.container.hash + "-" + index,
         progress:0,
         size:chunk.file.size
       }));

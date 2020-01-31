@@ -1,5 +1,7 @@
 
 
+
+const baseUrl = 'http://localhost:3000'
 export function request({
     url,
     method = "post",
@@ -11,7 +13,7 @@ export function request({
     return new Promise(resolve => {
         const xhr = new XMLHttpRequest();
         xhr.upload.onprogress = onProgress
-        xhr.open(method, url);
+        xhr.open(method, baseUrl+url);
         Object.keys(headers).forEach(key =>
             xhr.setRequestHeader(key, headers[key])
         );
@@ -22,6 +24,16 @@ export function request({
             });
         };
     });
+}
+export async function post(url,data){
+    let ret = await request({
+        url,
+        data: JSON.stringify(data),
+        headers: {
+          "content-type": "application/json"
+        }
+    })
+    return JSON.parse(ret.data)
 }
 
 
