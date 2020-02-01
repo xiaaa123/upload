@@ -19,7 +19,37 @@
       <div>总进度</div>
       <el-progress :percentage="fakeProgress"></el-progress>
 
-      <el-table :data="chunks">
+      <!-- <div class="cube-container">
+        <div class="cube" 
+          :class="{'uploading':chunk>0&&chunk<100, 'success':chunk==100}" 
+        v-for="(chunk,index) in cubes" :key="index">
+        </div>
+
+      </div> -->
+      <pre>
+{{chunks.length}}--{{cubeWidth}}
+
+      </pre>
+
+      <div class="cube-container" :style="{width:cubeWidth+'px'}">
+        <div class="cube" 
+
+          v-for="chunk in chunks" 
+          :key="chunk.hash">
+          <div           
+            :class="{
+            'uploading':chunk.progress>0&&chunk.progress<100, 
+            'success':chunk.progress==100
+            }" 
+            :style="{height:chunk.progress+'%'}"
+            >
+            
+            <i v-if="chunk.progress>0&&chunk.progress<100" class="el-icon-loading" style="color:#F56C6C;"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- <el-table :data="chunks">
         <el-table-column prop="hash" label="切片hash" align="center"></el-table-column>
         <el-table-column label="大小(KB)" align="center" width="120">
           <template v-slot="{ row }">{{ row.size |transformByte}}</template>
@@ -29,14 +59,31 @@
             <el-progress :percentage="row.progress"></el-progress>
           </template>
         </el-table-column>
-      </el-table>
+      </el-table> -->
     </div>
   </div>
 </template>
+<style lang="stylus" scoped>
+.cube-container
+  width 100px
+  overflow hidden
+.cube
+  width 14px
+  height 14px
+  line-height 12px;
+  border 1px solid black
+  background  #eee
+  float left
+  >.success
+    background #67C23A
+  >.uploading
+    background #409EFF
 
+
+</style>
 <script>
-import { request, post } from "./util";
-import SparkMD5 from "spark-md5";
+import { request, post } from "./util"
+import SparkMD5 from "spark-md5"
 
 // import axios from 'axios'
 
@@ -45,20 +92,30 @@ import SparkMD5 from "spark-md5";
 // 3. hash计算方式取巧 先计算前面2M和最后一块 中间取样的  命中率低 但是效率高 考虑两者配合 (布隆过滤器)
 // 4. 上传并发量控制， 我的mac上4个G计算hash40秒，虽然web-workder导致不卡顿了，但是建立这么多TCP链接，依然会卡死
 // 并发控制这个，我记得也是个头条面试题
-// 5. 并发中上传失败重试次数 + 错误提醒 （恢复）
 // 6. 方块进度条（canvas or div）
+
+
+// 5. 并发中上传失败重试次数 + 错误提醒 （恢复）
+    // 以及红色区块提醒 如何做retry
 // 7. 上传失败文件定时清理
+      // 定期扫描target下面的文件夹，创建时间过了24小时就可以清理了
 // 8. size动态调配，根据网速 慢启动的逻辑， 思考这种情况方块进度条怎么做
-// 9. 文件页面提醒小tips 根据status
-// 10 大文件下载 http分片，ftp协议的node实现（ftp介绍逻辑 不实现）
+    // 慢启动逻辑讲解 
+    // 比如每个请求控制在30秒，初始大小是1M
+    // 根据上一个上传成功的耗时 来决定下一个块的大小  
+    // 比如3秒传完，拿下一个就换成30M的length  
+    // 30M如果60秒才传完 下一个就换成15M的
+
+// 9. 文件页面提醒小tips 根据status 离开时给提醒
+// 10 大文件下载 http的header分片，ftp协议的node实现（ftp介绍逻辑 不实现）
 // 11 思考
-// 1. 问题深挖的好处
-// 2. 真实场景下的解决方案 oss 七牛
+//    1. 问题深挖的好处  学习原理 应付面试
+//    2. 真实场景下的解决方案 oss 七牛
 // const request = axios.create({
 //   baseURL: 'https://some-domain.com/api/',
 // })
 
-const SIZE = 10 * 1024 * 1024;
+const SIZE = 1 * 1024 * 1024;
 const Status = {
   wait: "wait",
   pause: "pause",
@@ -76,7 +133,8 @@ export default {
     Status,
     // 默认状态
     status: Status.wait,
-    fakeProgress: 0
+    fakeProgress: 0,
+    cubes:[0,0,0,0,0,0,1,1,1,1,1,1,1,1,100,100,100,1,0]
   }),
   filters: {
     transformByte(val) {
@@ -84,6 +142,10 @@ export default {
     }
   },
   computed: {
+    // 方块进度条尽可能的正方形 平方根向上取整
+    cubeWidth(){
+      return Math.ceil(Math.sqrt(this.chunks.length))*16
+    },
     uploadDisabled() {
       return (
         !this.container.file ||
@@ -138,7 +200,7 @@ export default {
       return chunks;
     },
 
-    async sendRequest(urls, max=3) {
+    async sendRequest(urls, max=4) {
       console.log(urls,max)
       return new Promise(resolve => {
         const len = urls.length;
@@ -174,7 +236,7 @@ export default {
       });
     },
 
-    async uploadChunks(uploadedList = [], max = 4) {
+    async uploadChunks(uploadedList = []) {
       // 这里一起上传，碰见大文件就是灾难
       // 没被hash计算打到，被一次性的tcp链接把浏览器稿挂了
       // 异步并发控制策略，我记得这个也是头条一个面试题
@@ -198,7 +260,7 @@ export default {
         //   })
         // );
       // await Promise.all(list);
-       const ret =  await this.sendRequest(list,2)
+       const ret =  await this.sendRequest(list,4)
        console.log(ret)
       if (uploadedList.length + list.length === this.chunks.length) {
         // 上传和已经存在之和 等于全部的再合并
@@ -371,11 +433,11 @@ export default {
 
       console.log("hashSample", this.container.hash);
 
-      this.container.hash = await this.calculateHashIdle(chunks);
-      console.log("hash2", this.container.hash);
+      // this.container.hash = await this.calculateHashIdle(chunks);
+      // console.log("hash2", this.container.hash);
 
-      this.container.hash = await this.calculateHash(chunks);
-      console.log("hash3", this.container.hash);
+      // this.container.hash = await this.calculateHash(chunks);
+      // console.log("hash3", this.container.hash);
 
       // 判断文件是否存在,如果不存在，获取已经上传的切片
       const { uploaded, uploadedList } = await this.verify(
