@@ -1,4 +1,4 @@
-function SendRequest(urls:String,max:number,callback:()=>void){
+function SendRequest(urls,max,callback){
 	let i = 0;
     const alltasks = [];
     const executing = [];

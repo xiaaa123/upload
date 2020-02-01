@@ -1,9 +1,12 @@
 <template>
   <div>
+    <div>
+      <input type="text" value="测试页面是否卡顿" />
+    </div>
     <h1>测试</h1>
     <input type="file" @change="handleFileChange" />
     <!-- <el-button type="primary" @click="handleUpload" :disabled="uploadDisabled">上传</el-button> -->
-    <el-button type="primary" @click="handleUpload" >上传</el-button>
+    <el-button type="primary" @click="handleUpload">上传</el-button>
     <el-button @click="handleResume" v-if="status === Status.pause">恢复</el-button>
     <el-button
       v-else
@@ -15,7 +18,6 @@
       <el-progress :percentage="hashProgress"></el-progress>
       <div>总进度</div>
       <el-progress :percentage="fakeProgress"></el-progress>
-
 
       <el-table :data="chunks">
         <el-table-column prop="hash" label="切片hash" align="center"></el-table-column>
@@ -36,15 +38,13 @@
 import { request, post } from "./util"
 import SparkMD5 from "spark-md5"
 
-
-
 // import axios from 'axios'
 
 // 1. hash切片( 介绍一下generator，，我们录制以下即可)
 // 2. hash计算切片，requestIdleCallback
 // 3. hash计算方式取巧 先计算前面2M和最后一块 中间取样的  命中率低 但是效率高 考虑两者配合 (布隆过滤器)
 // 4. 上传并发量控制， 我的mac上4个G计算hash40秒，虽然web-workder导致不卡顿了，但是建立这么多TCP链接，依然会卡死
-        // 并发控制这个，我记得也是个头条面试题
+// 并发控制这个，我记得也是个头条面试题
 // 5. 并发中上传失败重试次数 + 错误提醒 （恢复）
 // 6. 方块进度条（canvas or div）
 // 7. 上传失败文件定时清理
@@ -75,7 +75,7 @@ export default {
     Status,
     // 默认状态
     status: Status.wait,
-    fakeProgress:0
+    fakeProgress: 0
   }),
   filters: {
     transformByte(val) {
@@ -97,10 +97,10 @@ export default {
       return parseInt((loaded / this.container.file.size).toFixed(2))
     }
   },
-  watch:{
-    uploadProgress(now){
-      if(now>this.fakeProgress){
-        this.fakeProgress =now
+  watch: {
+    uploadProgress(now) {
+      if (now > this.fakeProgress) {
+        this.fakeProgress = now
       }
     }
   },
@@ -136,7 +136,7 @@ export default {
       }
       return chunks
     },
-    async uploadChunks(uploadedList=[]) {
+    async uploadChunks(uploadedList = []) {
       console.log(this.chunks)
       const list = this.chunks
         .filter(chunk => uploadedList.indexOf(chunk.hash) == -1)
@@ -199,6 +199,76 @@ export default {
         }
       })
     },
+
+    async calculateHashIdle(chunks) {
+      return new Promise(resolve => {
+        const spark = new SparkMD5.ArrayBuffer()
+        let count = 0
+        const appendToSpark = async ( file)=>{
+          return new Promise(resolve => {
+
+            const reader = new FileReader()
+            reader.readAsArrayBuffer(file)
+            reader.onload = e => {
+              spark.append(e.target.result)
+              resolve()
+            }
+          })
+        }
+        const workLoop = async (deadline)=>{
+          // 有任务，并且当前帧还没结束
+          while(count<chunks.length &&deadline.timeRemaining() > 1 ){
+            await appendToSpark(chunks[count].file)
+            count++
+            // 没有了 计算完毕
+            if (count<chunks.length) {
+              // 计算中
+              this.hashProgress = Number((100*count / chunks.length).toFixed(2))
+              // console.log(this.hashProgress)
+            } else {
+              // 计算完毕
+              this.hashProgress = 100
+              resolve(spark.end())
+            }
+          }
+          window.requestIdleCallback(workLoop)
+        }
+        window.requestIdleCallback(workLoop)
+      })
+    },
+    async calculateHashSync(chunks) {
+      return new Promise(resolve => {
+        const spark = new SparkMD5.ArrayBuffer()
+        let progress = 0
+        let count = 0
+        const reader = new FileReader()
+
+        const loadNext = index => {
+          const reader = new FileReader()
+          reader.readAsArrayBuffer(chunks[index].file)
+          reader.onload = e => {
+            // 累加器 不能依赖index，
+            count++
+            // 增量计算md5
+            spark.append(e.target.result)
+            if (count === chunks.length) {
+              // 通知主线程，计算结束
+              resolve(spark.end())
+              this.hashProgress = 100
+            } else {
+              // 每个区块计算结束，通知进度即可
+              this.hashProgress += 100 / chunks.length
+
+              // 计算下一个
+              loadNext(count)
+            }
+          }
+        }
+        // 启动
+        loadNext(0)
+      })
+      // 不计算之前的 方便一会拆解
+    },
     async verify(filename, hash) {
       const data = await post("/verify", { filename, hash })
       return data
@@ -209,9 +279,17 @@ export default {
       const chunks = this.createFileChunk(this.container.file)
 
       // 计算哈希
-      console.time('hash')
+      // this.container.hash = await this.calculateHashSync(chunks)
+
+
+      this.container.hash = await this.calculateHashIdle(chunks)
+      console.log('hash2',this.container.hash)
+
       this.container.hash = await this.calculateHash(chunks)
-      console.timeEnd('hash')
+      console.log('hash3',this.container.hash)
+
+
+      return 
 
       // 判断文件是否存在,如果不存在，获取已经上传的切片
       const { uploaded, uploadedList } = await this.verify(
@@ -224,18 +302,15 @@ export default {
       }
       this.chunks = chunks.map((chunk, index) => {
         const chunkName = this.container.hash + "-" + index
-        return       {
+        return {
           fileHash: this.container.hash,
           chunk: chunk.file,
           index,
           hash: chunkName,
-          progress: uploadedList.indexOf(chunkName)>-1?100:0,
+          progress: uploadedList.indexOf(chunkName) > -1 ? 100 : 0,
           size: chunk.file.size
         }
-      }
-      
-
-      )
+      })
       console.log(this.chunks)
       // console.log(this.chunks)
       // 传入已经存在的切片清单
