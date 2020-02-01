@@ -52,31 +52,51 @@ exports.extractExt = filename => filename.slice(filename.lastIndexOf("."), filen
 
 
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms*1000))
 
 
+function sendRequest(urls, max, callback) {
+  const len = urls.length;
+  let idx = 0;
+  let counter = 0;
 
-class Task{
-  constructor(){
+  async function start() {
+    // 有请求，有通道
+    while (idx < len && max > 0) {
+      max--; // 占用通道
+      console.log(urls[idx],'start')
+      sleep(urls[idx++]).then(()=>{
+        max++; // 释放通道
+        counter++;
+        if (counter === len) {
+          return callback();
+        } else {
+          start();
+        }
 
+      })
+
+    }
   }
-/**
- * 
- * @param {异步任务列表} tasks 
- * @param {并发数} limit 
- * @param {出错重试次数} retry 
- */
-  parallel(tasks,limit=4){
-    // let 
-  }
+  start();
 }
+// setInterval(()=>{
+//   console.log('x')
+// },1000)
 
-// async function test(){
-//   let t = new Task()
-//   const ret = await t.parallel([1,3,1.5,2,4],3)
-//   console.log('ret',ret)
-// }
-// test()
+sendRequest([1,4,6,1.5,5,2.5,3.5],3, function() {
+  console.log('done');
+});
+// 1s
+// 4s
+// 2s
+// 1end
+// 3s
+// 2emd
+// 5s
+
+
+
 
 
 

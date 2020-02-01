@@ -35,8 +35,8 @@
 </template>
 
 <script>
-import { request, post } from "./util"
-import SparkMD5 from "spark-md5"
+import { request, post } from "./util";
+import SparkMD5 from "spark-md5";
 
 // import axios from 'axios'
 
@@ -52,17 +52,18 @@ import SparkMD5 from "spark-md5"
 // 9. 文件页面提醒小tips 根据status
 // 10 大文件下载 http分片，ftp协议的node实现（ftp介绍逻辑 不实现）
 // 11 思考
-
+// 1. 问题深挖的好处
+// 2. 真实场景下的解决方案 oss 七牛
 // const request = axios.create({
 //   baseURL: 'https://some-domain.com/api/',
 // })
 
-const SIZE = 2 * 1024 * 1024
+const SIZE = 10 * 1024 * 1024;
 const Status = {
   wait: "wait",
   pause: "pause",
   uploading: "uploading"
-}
+};
 export default {
   data: () => ({
     container: {
@@ -79,7 +80,7 @@ export default {
   }),
   filters: {
     transformByte(val) {
-      return Number((val / 1024).toFixed(0))
+      return Number((val / 1024).toFixed(0));
     }
   },
   computed: {
@@ -87,85 +88,127 @@ export default {
       return (
         !this.container.file ||
         [Status.pause, Status.uploading].includes(this.status)
-      )
+      );
     },
     uploadProgress() {
-      if (!this.container.file || !this.chunks.length) return 0
+      if (!this.container.file || !this.chunks.length) return 0;
       const loaded = this.chunks
         .map(item => item.size * item.progress)
-        .reduce((acc, cur) => acc + cur)
-      return parseInt((loaded / this.container.file.size).toFixed(2))
+        .reduce((acc, cur) => acc + cur);
+      return parseInt((loaded / this.container.file.size).toFixed(2));
     }
   },
   watch: {
     uploadProgress(now) {
       if (now > this.fakeProgress) {
-        this.fakeProgress = now
+        this.fakeProgress = now;
       }
     }
   },
 
   methods: {
     async handleResume() {
-      this.status = Status.uploading
+      this.status = Status.uploading;
 
       const { uploadedList } = await this.verify(
         this.container.file.name,
         this.container.hash
-      )
-      await this.uploadChunks(uploadedList)
+      );
+      await this.uploadChunks(uploadedList);
     },
     handlePause() {
-      this.status = Status.pause
+      this.status = Status.pause;
 
-      this.requestList.forEach(xhr => xhr?.abort())
-      this.requestList = []
+      this.requestList.forEach(xhr => xhr?.abort());
+      this.requestList = [];
     },
     handleFileChange(e) {
-      const [file] = e.target.files
-      if (!file) return
-      this.container.file = file
+      const [file] = e.target.files;
+      if (!file) return;
+      this.container.file = file;
     },
     createFileChunk(file, size = SIZE) {
       // 生成文件块
-      const chunks = []
-      let cur = 0
+      const chunks = [];
+      let cur = 0;
       while (cur < file.size) {
-        chunks.push({ file: file.slice(cur, cur + size) })
-        cur += size
+        chunks.push({ file: file.slice(cur, cur + size) });
+        cur += size;
       }
-      return chunks
+      return chunks;
     },
-    async uploadChunks(uploadedList = []) {
-      console.log(this.chunks)
+
+    async sendRequest(urls, max=3) {
+      console.log(urls,max)
+      return new Promise(resolve => {
+        const len = urls.length;
+        let idx = 0;
+        let counter = 0;
+
+        const start = async ()=> {
+          // 有请求，有通道
+          while (idx < len && max > 0) {
+            max--; // 占用通道
+            console.log(idx, "start");
+            const form = urls[idx].form;
+            const index = urls[idx].index;
+            idx++
+
+            request({
+              url: '/upload',
+              data: form,
+              onProgress: this.createProgresshandler(this.chunks[index]),
+              requestList: this.requestList
+            }).then(() => {
+              max++; // 释放通道
+              counter++;
+              if (counter === len) {
+                resolve();
+              } else {
+                start();
+              }
+            });
+          }
+        }
+        start();
+      });
+    },
+
+    async uploadChunks(uploadedList = [], max = 4) {
+      // 这里一起上传，碰见大文件就是灾难
+      // 没被hash计算打到，被一次性的tcp链接把浏览器稿挂了
+      // 异步并发控制策略，我记得这个也是头条一个面试题
+      // 比如并发量控制成4
       const list = this.chunks
         .filter(chunk => uploadedList.indexOf(chunk.hash) == -1)
         .map(({ chunk, hash, index }, i) => {
-          const form = new FormData()
-          form.append("chunk", chunk)
-          form.append("hash", hash)
-          form.append("filename", this.container.file.name)
-          form.append("fileHash", this.container.hash)
-          return { form, index }
+          const form = new FormData();
+          form.append("chunk", chunk);
+          form.append("hash", hash);
+          form.append("filename", this.container.file.name);
+          form.append("fileHash", this.container.hash);
+          return { form, index };
         })
-        .map(({ form, index }) =>
-          request({
-            url: "/upload",
-            data: form,
-            onProgress: this.createProgresshandler(this.chunks[index]),
-            requestList: this.requestList
-          })
-        )
-      const ret = await Promise.all(list)
+        // .map(({ form, index }) =>
+        //   request({
+        //     url: "/upload",
+        //     data: form,
+        //     onProgress: this.createProgresshandler(this.chunks[index]),
+        //     requestList: this.requestList
+        //   })
+        // );
+      // await Promise.all(list);
+       const ret =  await this.sendRequest(list,2)
+       console.log(ret)
       if (uploadedList.length + list.length === this.chunks.length) {
         // 上传和已经存在之和 等于全部的再合并
-        await this.mergeRequest()
+        await this.mergeRequest();
       }
     },
     createProgresshandler(item) {
       return e => {
-        item.progress = parseInt(String((e.loaded / e.total) * 100))
-      }
+        item.progress = parseInt(String((e.loaded / e.total) * 100));
+      };
     },
 
     async mergeRequest() {
@@ -173,7 +216,7 @@ export default {
         filename: this.container.file.name,
         size: SIZE,
         fileHash: this.container.hash
-      })
+      });
       // await request({
       //   url: "/merge",
       //   headers: {
@@ -188,166 +231,163 @@ export default {
     async calculateHash(chunks) {
       return new Promise(resolve => {
         // web-worker 防止卡顿主线程
-        this.container.workder = new Worker("/hash.js")
-        this.container.workder.postMessage({ chunks })
+        this.container.workder = new Worker("/hash.js");
+        this.container.workder.postMessage({ chunks });
         this.container.workder.onmessage = e => {
-          const { progress, hash } = e.data
-          this.hashProgress = Number(progress.toFixed(2))
+          const { progress, hash } = e.data;
+          this.hashProgress = Number(progress.toFixed(2));
           if (hash) {
-            resolve(hash)
+            resolve(hash);
           }
-        }
-      })
+        };
+      });
     },
-    async calculateHashSample(){
-      return new Promise(resolve=>{
-        const spark = new SparkMD5.ArrayBuffer()
-        const reader = new FileReader()
-        const file = this.container.file
+    async calculateHashSample() {
+      return new Promise(resolve => {
+        const spark = new SparkMD5.ArrayBuffer();
+        const reader = new FileReader();
+        const file = this.container.file;
         // 文件大小
-        const size = this.container.file.size
-        let offset = 2*1024*1024
+        const size = this.container.file.size;
+        let offset = 2 * 1024 * 1024;
 
-        let chunks = [file.slice(0,offset)]
+        let chunks = [file.slice(0, offset)];
 
         // 前面100K
 
-        let cur = offset
+        let cur = offset;
         while (cur < size) {
           // 最后一块全部加进来
-          if(cur+offset>=size){
-            chunks.push(file.slice(cur, cur+offset) )
-          }else{
+          if (cur + offset >= size) {
+            chunks.push(file.slice(cur, cur + offset));
+          } else {
             // 中间的 前中后去两个子杰
-            const mid = cur+offset/2
-            const end = cur+offset
-            chunks.push(file.slice(cur,cur+2))
-            chunks.push(file.slice(mid,mid+2))
-            chunks.push(file.slice(end-2,end))
+            const mid = cur + offset / 2;
+            const end = cur + offset;
+            chunks.push(file.slice(cur, cur + 2));
+            chunks.push(file.slice(mid, mid + 2));
+            chunks.push(file.slice(end - 2, end));
           }
           // 前取两个子杰
-          cur += offset
+          cur += offset;
         }
         // 拼接
-        reader.readAsArrayBuffer(new Blob(chunks))
+        reader.readAsArrayBuffer(new Blob(chunks));
 
         // 最后100K
-        reader.onload = e=>{
-          spark.append(e.target.result)
-          
-          resolve(spark.end())
-        }
+        reader.onload = e => {
+          spark.append(e.target.result);
 
-      })
-
+          resolve(spark.end());
+        };
+      });
     },
     async calculateHashIdle(chunks) {
       return new Promise(resolve => {
-        const spark = new SparkMD5.ArrayBuffer()
-        let count = 0
-        const appendToSpark = async ( file)=>{
+        const spark = new SparkMD5.ArrayBuffer();
+        let count = 0;
+        const appendToSpark = async file => {
           return new Promise(resolve => {
-
-            const reader = new FileReader()
-            reader.readAsArrayBuffer(file)
+            const reader = new FileReader();
+            reader.readAsArrayBuffer(file);
             reader.onload = e => {
-              spark.append(e.target.result)
-              resolve()
-            }
-          })
-        }
-        const workLoop = async (deadline)=>{
+              spark.append(e.target.result);
+              resolve();
+            };
+          });
+        };
+        const workLoop = async deadline => {
           // 有任务，并且当前帧还没结束
-          while(count<chunks.length &&deadline.timeRemaining() > 1 ){
-            await appendToSpark(chunks[count].file)
-            count++
+          while (count < chunks.length && deadline.timeRemaining() > 1) {
+            await appendToSpark(chunks[count].file);
+            count++;
             // 没有了 计算完毕
-            if (count<chunks.length) {
+            if (count < chunks.length) {
               // 计算中
-              this.hashProgress = Number((100*count / chunks.length).toFixed(2))
+              this.hashProgress = Number(
+                ((100 * count) / chunks.length).toFixed(2)
+              );
               // console.log(this.hashProgress)
             } else {
               // 计算完毕
-              this.hashProgress = 100
-              resolve(spark.end())
+              this.hashProgress = 100;
+              resolve(spark.end());
             }
           }
-          window.requestIdleCallback(workLoop)
-        }
-        window.requestIdleCallback(workLoop)
-      })
+          window.requestIdleCallback(workLoop);
+        };
+        window.requestIdleCallback(workLoop);
+      });
     },
     async calculateHashSync(chunks) {
       return new Promise(resolve => {
-        const spark = new SparkMD5.ArrayBuffer()
-        let progress = 0
-        let count = 0
+        const spark = new SparkMD5.ArrayBuffer();
+        let progress = 0;
+        let count = 0;
 
         const loadNext = index => {
-          const reader = new FileReader()
-          reader.readAsArrayBuffer(chunks[index].file)
+          const reader = new FileReader();
+          reader.readAsArrayBuffer(chunks[index].file);
           reader.onload = e => {
             // 累加器 不能依赖index，
-            count++
+            count++;
             // 增量计算md5
-            spark.append(e.target.result)
+            spark.append(e.target.result);
             if (count === chunks.length) {
               // 通知主线程，计算结束
-              resolve(spark.end())
-              this.hashProgress = 100
+              resolve(spark.end());
+              this.hashProgress = 100;
             } else {
               // 每个区块计算结束，通知进度即可
-              this.hashProgress += 100 / chunks.length
+              this.hashProgress += 100 / chunks.length;
 
               // 计算下一个
-              loadNext(count)
+              loadNext(count);
             }
-          }
-        }
+          };
+        };
         // 启动
-        loadNext(0)
-      })
+        loadNext(0);
+      });
       // 不计算之前的 方便一会拆解
     },
     async verify(filename, hash) {
-      const data = await post("/verify", { filename, hash })
-      return data
+      const data = await post("/verify", { filename, hash });
+      return data;
     },
     async handleUpload() {
-      if (!this.container.file) return
-      this.status = Status.uploading
-      const chunks = this.createFileChunk(this.container.file)
-      console.log(chunks)
+      if (!this.container.file) return;
+      this.status = Status.uploading;
+      const chunks = this.createFileChunk(this.container.file);
+      console.log(chunks);
       // 计算哈希
       // this.container.hash = await this.calculateHashSync(chunks)
-      console.time('samplehash')
+      console.time("samplehash");
       // 这样抽样，大概1个G1秒，如果还嫌慢，可以考虑分片+web-worker的方式
       // 这种方式偶尔会误判 不过大题效率不错
       // 可以考虑和全部的hash配合，因为samplehash不存在，就一定不存在，存在才有可能误判，有点像布隆过滤器
-      this.container.hash = await this.calculateHashSample()
-      console.timeEnd('samplehash')
-      
-      console.log('hashSample',this.container.hash)
+      this.container.hash = await this.calculateHashSample();
+      console.timeEnd("samplehash");
 
-      this.container.hash = await this.calculateHashIdle(chunks)
-      console.log('hash2',this.container.hash)
+      console.log("hashSample", this.container.hash);
 
-      this.container.hash = await this.calculateHash(chunks)
-      console.log('hash3',this.container.hash)
+      this.container.hash = await this.calculateHashIdle(chunks);
+      console.log("hash2", this.container.hash);
 
-
+      this.container.hash = await this.calculateHash(chunks);
+      console.log("hash3", this.container.hash);
 
       // 判断文件是否存在,如果不存在，获取已经上传的切片
       const { uploaded, uploadedList } = await this.verify(
         this.container.file.name,
         this.container.hash
-      )
+      );
 
       if (uploaded) {
-        return this.$message.success("秒传:上传成功")
+        return this.$message.success("秒传:上传成功");
       }
       this.chunks = chunks.map((chunk, index) => {
-        const chunkName = this.container.hash + "-" + index
+        const chunkName = this.container.hash + "-" + index;
         return {
           fileHash: this.container.hash,
           chunk: chunk.file,
@@ -355,14 +395,11 @@ export default {
           hash: chunkName,
           progress: uploadedList.indexOf(chunkName) > -1 ? 100 : 0,
           size: chunk.file.size
-        }
-      })
-
-      return 
-
+        };
+      });
       // 传入已经存在的切片清单
-      await this.uploadChunks(uploadedList)
+      await this.uploadChunks(uploadedList);
     }
   }
-}
+};
 </script>
