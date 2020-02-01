@@ -16,6 +16,7 @@ const pipeStream = (filePath, writeStream) =>
   new Promise(resolve => {
     const readStream = fse.createReadStream(filePath)
     readStream.on("end", () => {
+      // 删除文件
       fse.unlinkSync(filePath)
       resolve()
     })
@@ -48,3 +49,34 @@ exports.getUploadedList = async (dirPath)=>{
       : []
   }
 exports.extractExt = filename => filename.slice(filename.lastIndexOf("."), filename.length)
+
+
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+
+
+class Task{
+  constructor(){
+
+  }
+/**
+ * 
+ * @param {异步任务列表} tasks 
+ * @param {并发数} limit 
+ * @param {出错重试次数} retry 
+ */
+  parallel(tasks,limit=4){
+    // let 
+  }
+}
+
+// async function test(){
+//   let t = new Task()
+//   const ret = await t.parallel([1,3,1.5,2,4],3)
+//   console.log('ret',ret)
+// }
+// test()
+
+
+

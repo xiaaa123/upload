@@ -34,27 +34,30 @@
 
 <script>
 import { request, post } from "./util"
-import SparkMd5 from "spark-md5"
+import SparkMD5 from "spark-md5"
+
+
+
 // import axios from 'axios'
 
-// @todo size切分
-// @todo canvas方块进度条
-// @todo 并发量控制+报错重试
-// @todo 上传失败文件碎片的清理工作
-// @todo 大文件的hash值计算 （三分+名字+size）或者每10M三分 节省时间 第一块和最后一块取全部，中间的抽样
-// @todo 计算哈希 使用time-slice (setTimeout和requestIdleCallback)
-// @todo 哈希的计算分级，先计算前面2M和最后一块 中间取样的，如果不同直接上传，想通再计算全部的
-
-// @todo size大小动态调配 根据网速，慢启动
-// @todo 大文件下载
-// @todo 页面提来提醒 根据status
-
+// 1. hash切片( 介绍一下generator，，我们录制以下即可)
+// 2. hash计算切片，requestIdleCallback
+// 3. hash计算方式取巧 先计算前面2M和最后一块 中间取样的  命中率低 但是效率高 考虑两者配合 (布隆过滤器)
+// 4. 上传并发量控制， 我的mac上4个G计算hash40秒，虽然web-workder导致不卡顿了，但是建立这么多TCP链接，依然会卡死
+        // 并发控制这个，我记得也是个头条面试题
+// 5. 并发中上传失败重试次数 + 错误提醒 （恢复）
+// 6. 方块进度条（canvas or div）
+// 7. 上传失败文件定时清理
+// 8. size动态调配，根据网速 慢启动的逻辑， 思考这种情况方块进度条怎么做
+// 9. 文件页面提醒小tips 根据status
+// 10 大文件下载 http分片，ftp协议的node实现（ftp介绍逻辑 不实现）
+// 11 思考
 
 // const request = axios.create({
 //   baseURL: 'https://some-domain.com/api/',
 // })
 
-const SIZE = 3 * 1024 * 1024
+const SIZE = 2 * 1024 * 1024
 const Status = {
   wait: "wait",
   pause: "pause",
@@ -206,7 +209,9 @@ export default {
       const chunks = this.createFileChunk(this.container.file)
 
       // 计算哈希
+      console.time('hash')
       this.container.hash = await this.calculateHash(chunks)
+      console.timeEnd('hash')
 
       // 判断文件是否存在,如果不存在，获取已经上传的切片
       const { uploaded, uploadedList } = await this.verify(
