@@ -199,7 +199,48 @@ export default {
         }
       })
     },
+    async calculateHashSample(){
+      return new Promise(resolve=>{
+        const spark = new SparkMD5.ArrayBuffer()
+        const reader = new FileReader()
+        const file = this.container.file
+        // 文件大小
+        const size = this.container.file.size
+        let offset = 2*1024*1024
 
+        let chunks = [file.slice(0,offset)]
+
+        // 前面100K
+
+        let cur = offset
+        while (cur < size) {
+          // 最后一块全部加进来
+          if(cur+offset>=size){
+            chunks.push(file.slice(cur, cur+offset) )
+          }else{
+            // 中间的 前中后去两个子杰
+            const mid = cur+offset/2
+            const end = cur+offset
+            chunks.push(file.slice(cur,cur+2))
+            chunks.push(file.slice(mid,mid+2))
+            chunks.push(file.slice(end-2,end))
+          }
+          // 前取两个子杰
+          cur += offset
+        }
+        // 拼接
+        reader.readAsArrayBuffer(new Blob(chunks))
+
+        // 最后100K
+        reader.onload = e=>{
+          spark.append(e.target.result)
+          
+          resolve(spark.end())
+        }
+
+      })
+
+    },
     async calculateHashIdle(chunks) {
       return new Promise(resolve => {
         const spark = new SparkMD5.ArrayBuffer()
@@ -241,7 +282,6 @@ export default {
         const spark = new SparkMD5.ArrayBuffer()
         let progress = 0
         let count = 0
-        const reader = new FileReader()
 
         const loadNext = index => {
           const reader = new FileReader()
@@ -277,10 +317,17 @@ export default {
       if (!this.container.file) return
       this.status = Status.uploading
       const chunks = this.createFileChunk(this.container.file)
-
+      console.log(chunks)
       // 计算哈希
       // this.container.hash = await this.calculateHashSync(chunks)
-
+      console.time('samplehash')
+      // 这样抽样，大概1个G1秒，如果还嫌慢，可以考虑分片+web-worker的方式
+      // 这种方式偶尔会误判 不过大题效率不错
+      // 可以考虑和全部的hash配合，因为samplehash不存在，就一定不存在，存在才有可能误判，有点像布隆过滤器
+      this.container.hash = await this.calculateHashSample()
+      console.timeEnd('samplehash')
+      
+      console.log('hashSample',this.container.hash)
 
       this.container.hash = await this.calculateHashIdle(chunks)
       console.log('hash2',this.container.hash)
@@ -289,7 +336,6 @@ export default {
       console.log('hash3',this.container.hash)
 
 
-      return 
 
       // 判断文件是否存在,如果不存在，获取已经上传的切片
       const { uploaded, uploadedList } = await this.verify(
@@ -311,8 +357,9 @@ export default {
           size: chunk.file.size
         }
       })
-      console.log(this.chunks)
-      // console.log(this.chunks)
+
+      return 
+
       // 传入已经存在的切片清单
       await this.uploadChunks(uploadedList)
     }

@@ -10,6 +10,9 @@ self.onmessage = e=>{
     let progress = 0
     let count = 0
     
+
+
+    
     const loadNext = index=>{
         const reader = new FileReader()
         reader.readAsArrayBuffer(chunks[index].file)
