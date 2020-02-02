@@ -1,9 +1,13 @@
 const http = require("http")
 const path = require('path')
 const Controller = require('./controller')
+const schedule = require('./schedule')
 const server = http.createServer()
 
 const UPLOAD_DIR = path.resolve(__dirname, "..", "target"); // 大文件存储目录
+
+
+schedule.start(UPLOAD_DIR)
 
 const ctrl = new Controller(UPLOAD_DIR)
 
