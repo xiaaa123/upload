@@ -78,7 +78,13 @@ class Controller {
         `${fileHash}${extractExt(filename)}`
       )
       const chunkDir = path.resolve(this.UPLOAD_DIR, fileHash)
-
+      if(Math.random()<0.5){
+        // 概率报错
+        console.log('概率报错了')
+        res.statusCode=500
+        res.end()
+        return 
+      }
 
       // 文件存在直接返回
       if (fse.existsSync(filePath)) {

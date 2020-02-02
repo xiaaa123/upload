@@ -27,10 +27,10 @@
         </div>
 
       </div> -->
-      <pre>
+      <!-- <pre>
 {{chunks.length}}--{{cubeWidth}}
 
-      </pre>
+      </pre> -->
 
       <div class="cube-container" :style="{width:cubeWidth+'px'}">
         <div class="cube" 
@@ -40,12 +40,13 @@
           <div           
             :class="{
             'uploading':chunk.progress>0&&chunk.progress<100, 
-            'success':chunk.progress==100
+            'success':chunk.progress==100,
+            'error':chunk.progress<0,
             }" 
             :style="{height:chunk.progress+'%'}"
             >
-            
-            <i v-if="chunk.progress>0&&chunk.progress<100" class="el-icon-loading" style="color:#F56C6C;"></i>
+            {{chunk.index}}
+            <!-- <i v-if="chunk.progress<100" class="el-icon-loading" style="color:#F56C6C;"></i> -->
           </div>
         </div>
       </div>
@@ -79,6 +80,8 @@
     background #67C23A
   >.uploading
     background #409EFF
+  >.error
+    background #F56C6C
 
 
 </style>
@@ -123,11 +126,13 @@ import SparkMD5 from "spark-md5"
 //   baseURL: 'https://some-domain.com/api/',
 // })
 
-const SIZE = 1 * 1024 * 1024;
+const SIZE = 0.2 * 1024 * 1024;
 const Status = {
   wait: "wait",
   pause: "pause",
-  uploading: "uploading"
+  uploading: "uploading",
+  error: "error",
+  done: "done",
 };
 export default {
   data: () => ({
@@ -208,36 +213,90 @@ export default {
       return chunks;
     },
 
-    async sendRequest(urls, max=4) {
+    async sendRequest(urls, max=4,retrys=3) {
       console.log(urls,max)
-      return new Promise(resolve => {
+      
+      return new Promise((resolve,reject) => {
         const len = urls.length;
         let idx = 0;
         let counter = 0;
+        const retryArr = []
+        // const start = async index=>{
+        //     max--; // 占用通道
+        //     const form = urls[idx].form;
+        //     const index = urls[idx].index;
+        //     if(typeof retryArr[index]=='number'){
+        //       console.log(index,'开始重试')
+        //     }
+        //     request({
+        //       url: '/upload',
+        //       data: form,
+        //       onProgress: this.createProgresshandler(this.chunks[index]),
+        //       requestList: this.requestList
+        //     }).then(() => {
+        //       max++; // 释放通道
+        //       counter++;
+        //       if (counter === len) {
+        //         resolve();
+        //       } else {
+        //         start();
+        //       }
+        //     })
+        // }
+
+        // while(idx<len && max>0){
+        //   start(idx)
+        //   idx++
+        // }
+        
 
         const start = async ()=> {
           // 有请求，有通道
-          while (idx < len && max > 0) {
+          while (counter < len && max > 0) {
             max--; // 占用通道
             console.log(idx, "start");
-            const form = urls[idx].form;
-            const index = urls[idx].index;
-            idx++
-
+            const i = urls.findIndex(v=>v.status==Status.wait || v.status==Status.error )// 等待或者error
+            urls[i].status = Status.uploading
+            const form = urls[i].form;
+            const index = urls[i].index;
+            if(typeof retryArr[index]=='number'){
+              console.log(index,'开始重试')
+            }
             request({
               url: '/upload',
               data: form,
               onProgress: this.createProgresshandler(this.chunks[index]),
               requestList: this.requestList
             }).then(() => {
+               urls[i].status = Status.done
+
               max++; // 释放通道
               counter++;
+              urls[counter].done=true
               if (counter === len) {
                 resolve();
               } else {
                 start();
               }
-            });
+            }).catch(()=>{
+                // 初始值
+               urls[i].status = Status.error
+               if(typeof retryArr[index]!=='number'){
+                  retryArr[index] = 0
+               }
+              // 次数累加
+              retryArr[index]++
+              // 一个请求报错3次的
+              if(retryArr[index]>=2){
+                return reject()
+              }
+              console.log(index, retryArr[index],'次报错')
+              // 3次报错以内的 重启
+              this.chunks[index].progress = -1 // 报错的进度条
+              max++; // 释放当前占用的通道，但是counter不累加
+              
+              start()
+            })
           }
         }
         start();
@@ -257,7 +316,7 @@ export default {
           form.append("hash", hash);
           form.append("filename", this.container.file.name);
           form.append("fileHash", this.container.hash);
-          return { form, index };
+          return { form, index,status:Status.wait };
         })
         // .map(({ form, index }) =>
         //   request({
@@ -268,12 +327,19 @@ export default {
         //   })
         // );
       // await Promise.all(list);
-       const ret =  await this.sendRequest(list,4)
-       console.log(ret)
-      if (uploadedList.length + list.length === this.chunks.length) {
-        // 上传和已经存在之和 等于全部的再合并
-        await this.mergeRequest();
+      try{
+        const ret =  await this.sendRequest(list,4)
+        console.log(ret)
+        if (uploadedList.length + list.length === this.chunks.length) {
+          // 上传和已经存在之和 等于全部的再合并
+          await this.mergeRequest();
+        }
+      }catch(e){
+        // 上传有被reject的
+         this.$message.error('亲 上传失败了,考虑重试下呦');
+         this.status = Status.wait
       }
+
     },
     createProgresshandler(item) {
       return e => {
@@ -453,10 +519,10 @@ export default {
         let start = new Date().getTime()
         await request({ url: '/upload',data: form })
         const now = new Date().getTime()
-        
+
         const time = ((now -start)/1000).toFixed(4)
         let rate = time/30
-        // 速率有最大和最小
+        // 速率有最大和最小 可以考虑更平滑的过滤 比如1/tan 
         if(rate<0.5) rate=0.5
         if(rate>2) rate=2
         // 新的切片大小等比变化

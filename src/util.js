@@ -10,7 +10,7 @@ export function request({
     headers = {},
     requestList
 }) {
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.upload.onprogress = onProgress
         xhr.open(method, baseUrl+url);
@@ -18,17 +18,25 @@ export function request({
             xhr.setRequestHeader(key, headers[key])
         );
         xhr.send(data);
-        xhr.onload = e => {
-            if(requestList){
-                // 成功后删除列表
-                const i = requestList.findIndex(req=>req===xhr)
-                requestList.splice(i, 1)
-            }
-            resolve({
-                data: e.target.response
-            });
+
+        xhr.onreadystatechange = e => {
+            if(xhr.readyState === 4) {
+                if(xhr.status === 200){
+                    if(requestList){
+                        // 成功后删除列表
+                        const i = requestList.findIndex(req=>req===xhr)
+                        requestList.splice(i, 1)
+                    }
+                    resolve({
+                        data: e.target.response
+                    });
+                }else{
+                    reject('报错了 大哥')
+                }
+              }
         };
         // 存储 在vue中的this.requestList中 方便暂停 ?.信誉发
+        // if(requestList.)
         requestList?.push(xhr)
         // requestList && requestList.push('shengxinjing')
     });
