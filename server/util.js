@@ -84,9 +84,9 @@ function sendRequest(urls, max, callback) {
 //   console.log('x')
 // },1000)
 
-sendRequest([1,4,6,1.5,5,2.5,3.5],3, function() {
-  console.log('done');
-});
+// sendRequest([1,4,6,1.5,5,2.5,3.5],3, function() {
+//   console.log('done');
+// });
 // 1s
 // 4s
 // 2s

@@ -7,6 +7,7 @@
     <input type="file" @change="handleFileChange" />
     <!-- <el-button type="primary" @click="handleUpload" :disabled="uploadDisabled">上传</el-button> -->
     <el-button type="primary" @click="handleUpload">上传</el-button>
+    <el-button type="primary" @click="handleUpload1">慢启动上传</el-button>
     <el-button @click="handleResume" v-if="status === Status.pause">恢复</el-button>
     <el-button
       v-else
@@ -93,12 +94,15 @@ import SparkMD5 from "spark-md5"
 // 4. 上传并发量控制， 我的mac上4个G计算hash40秒，虽然web-workder导致不卡顿了，但是建立这么多TCP链接，依然会卡死
 // 并发控制这个，我记得也是个头条面试题
 // 6. 方块进度条（canvas or div）
+// 7. 上传失败文件定时清理
+      // 定期扫描target下面的文件夹，创建时间过了24小时就可以清理了
+
+
 
 
 // 5. 并发中上传失败重试次数 + 错误提醒 （恢复）
     // 以及红色区块提醒 如何做retry
-// 7. 上传失败文件定时清理
-      // 定期扫描target下面的文件夹，创建时间过了24小时就可以清理了
+
 // 8. size动态调配，根据网速 慢启动的逻辑， 思考这种情况方块进度条怎么做
     // 慢启动逻辑讲解 
     // 比如每个请求控制在30秒，初始大小是1M
@@ -106,8 +110,12 @@ import SparkMD5 from "spark-md5"
     // 比如3秒传完，拿下一个就换成30M的length  
     // 30M如果60秒才传完 下一个就换成15M的
 
-// 9. 文件页面提醒小tips 根据status 离开时给提醒
-// 10 大文件下载 http的header分片，ftp协议的node实现（ftp介绍逻辑 不实现）
+// 9. 文件页面提醒小tips watch status如果是uploading，页面跳转和 离开时给提醒 router钩子和 onbeforeunload 就像掘金注销的弹窗
+// 10 大文件下载 
+    // 先用axios.head获取content-length 获取文件大小信息
+    // 然后分片，通过http的headers={'Range':'Bytes=0-15000','Accept-Encoding':'*'} 一次获取写入
+    // 断电续传的逻辑想通
+    // 当然最好的就是ftp协议的node实现（ftp介绍逻辑 不实现）
 // 11 思考
 //    1. 问题深挖的好处  学习原理 应付面试
 //    2. 真实场景下的解决方案 oss 七牛
@@ -416,6 +424,62 @@ export default {
     async verify(filename, hash) {
       const data = await post("/verify", { filename, hash });
       return data;
+    },
+    async handleUpload1(){
+      // @todo数据缩放的比率 可以更平缓  
+      // @todo 并发+慢启动
+
+      // 慢启动上传逻辑 
+      const file = this.container.file
+      if (!file) return;
+      this.status = Status.uploading;
+      const fileSize = file.size
+      let offset = 1024*1024 
+      let cur = 0 
+      let count =0
+      this.container.hash = await this.calculateHashSample();
+
+      while(cur<fileSize){
+        const chunk = file.slice(cur, cur+offset)
+        cur+=offset
+        const chunkName = this.container.hash + "-" + count;
+        const form = new FormData();
+        form.append("chunk", chunk);
+        form.append("hash", chunkName);
+        form.append("filename", file.name);
+        form.append("fileHash", this.container.hash);
+        form.append("size", chunk.size);
+
+        let start = new Date().getTime()
+        await request({ url: '/upload',data: form })
+        const now = new Date().getTime()
+        
+        const time = ((now -start)/1000).toFixed(4)
+        let rate = time/30
+        // 速率有最大和最小
+        if(rate<0.5) rate=0.5
+        if(rate>2) rate=2
+        // 新的切片大小等比变化
+        console.log(`切片${count}大小是${this.format(offset)},耗时${time}秒，是30秒的${rate}倍，修正大小为${this.format(offset/rate)}`)
+        offset = parseInt(offset/rate)
+        // if(time)
+        count++
+      }
+
+
+
+    },
+    format(num){
+      if(num>1024*1024*1024){
+        return (num/(1024*1024*1024)).toFixed(2)+'GB'
+      }
+      if(num>1024*1024){
+        return (num/(1024*1024)).toFixed(2)+'MB'
+      }
+      if(num>1024){
+        return (num/(1024)).toFixed(2)+'KB'
+      }
+      return num+'B'
     },
     async handleUpload() {
       if (!this.container.file) return;
