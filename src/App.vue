@@ -221,35 +221,6 @@ export default {
         let idx = 0;
         let counter = 0;
         const retryArr = []
-        // const start = async index=>{
-        //     max--; // 占用通道
-        //     const form = urls[idx].form;
-        //     const index = urls[idx].index;
-        //     if(typeof retryArr[index]=='number'){
-        //       console.log(index,'开始重试')
-        //     }
-        //     request({
-        //       url: '/upload',
-        //       data: form,
-        //       onProgress: this.createProgresshandler(this.chunks[index]),
-        //       requestList: this.requestList
-        //     }).then(() => {
-        //       max++; // 释放通道
-        //       counter++;
-        //       if (counter === len) {
-        //         resolve();
-        //       } else {
-        //         start();
-        //       }
-        //     })
-        // }
-
-        // while(idx<len && max>0){
-        //   start(idx)
-        //   idx++
-        // }
-        
-
         const start = async ()=> {
           // 有请求，有通道
           while (counter < len && max > 0) {
@@ -288,7 +259,7 @@ export default {
               retryArr[index]++
               // 一个请求报错3次的
               if(retryArr[index]>=2){
-                return reject()
+                return reject() // 考虑abort所有别的
               }
               console.log(index, retryArr[index],'次报错')
               // 3次报错以内的 重启
@@ -329,7 +300,6 @@ export default {
       // await Promise.all(list);
       try{
         const ret =  await this.sendRequest(list,4)
-        console.log(ret)
         if (uploadedList.length + list.length === this.chunks.length) {
           // 上传和已经存在之和 等于全部的再合并
           await this.mergeRequest();
@@ -337,7 +307,7 @@ export default {
       }catch(e){
         // 上传有被reject的
          this.$message.error('亲 上传失败了,考虑重试下呦');
-         this.status = Status.wait
+
       }
 
     },

@@ -30,7 +30,7 @@ export function request({
                     resolve({
                         data: e.target.response
                     });
-                }else{
+                }else if(xhr.status === 500){
                     reject('报错了 大哥')
                 }
               }
