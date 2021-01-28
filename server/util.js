@@ -1,3 +1,12 @@
+/*
+ * @Author: your name
+ * @Date: 2021-01-22 10:23:23
+ * @LastEditTime: 2021-01-22 14:25:58
+ * @LastEditors: Please set LastEditors
+ * @Description: In User Settings Edit
+ * @FilePath: \新建文件夹\upload\server\util.js
+ */
+
 const fse = require("fs-extra")
 const path = require('path')
 
@@ -22,6 +31,7 @@ const pipeStream = (filePath, writeStream) =>
     })
     readStream.pipe(writeStream)
   })
+
 exports.mergeFiles = async (files,dest,size)=>{
   await Promise.all(
     files.map((file, index) =>
@@ -37,23 +47,18 @@ exports.mergeFiles = async (files,dest,size)=>{
       )
     )
   )
-
 }
 
-
-  // 返回已经上传切片名列表
-
+// 返回已经上传切片名列表
 exports.getUploadedList = async (dirPath)=>{
     return fse.existsSync(dirPath) 
       ? (await fse.readdir(dirPath)).filter(name=>name[0]!=='.') // 过滤诡异的隐藏文件
       : []
   }
+  
 exports.extractExt = filename => filename.slice(filename.lastIndexOf("."), filename.length)
 
-
-
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms*1000))
-
 
 function sendRequest(urls, max, callback) {
   const len = urls.length;

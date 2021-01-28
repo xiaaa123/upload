@@ -1,8 +1,8 @@
 <template>
   <div>
-    <div>
+    <!-- <div>
       <input type="text" value="测试页面是否卡顿" />
-    </div>
+    </div> -->
     <h1>测试</h1>
     <input type="file" @change="handleFileChange" />
     <!-- <el-button type="primary" @click="handleUpload" :disabled="uploadDisabled">上传</el-button> -->
@@ -34,7 +34,6 @@
 
       <div class="cube-container" :style="{width:cubeWidth+'px'}">
         <div class="cube" 
-
           v-for="chunk in chunks" 
           :key="chunk.hash">
           <div           
@@ -51,7 +50,7 @@
         </div>
       </div>
 
-      <!-- <el-table :data="chunks">
+      <el-table :data="chunks">
         <el-table-column prop="hash" label="切片hash" align="center"></el-table-column>
         <el-table-column label="大小(KB)" align="center" width="120">
           <template v-slot="{ row }">{{ row.size |transformByte}}</template>
@@ -61,7 +60,7 @@
             <el-progress :percentage="row.progress"></el-progress>
           </template>
         </el-table-column>
-      </el-table> -->
+      </el-table>
     </div>
   </div>
 </template>
@@ -126,7 +125,7 @@ import SparkMD5 from "spark-md5"
 //   baseURL: 'https://some-domain.com/api/',
 // })
 
-const SIZE = 0.2 * 1024 * 1024;
+const SIZE = 0.2 * 1024 * 1024;  //一个文件块0.2M
 const Status = {
   wait: "wait",
   pause: "pause",
@@ -157,7 +156,7 @@ export default {
   computed: {
     // 方块进度条尽可能的正方形 平方根向上取整
     cubeWidth(){
-      return Math.ceil(Math.sqrt(this.chunks.length))*16
+      return Math.ceil(Math.sqrt(this.chunks.length))*24
     },
     uploadDisabled() {
       return (
@@ -184,7 +183,7 @@ export default {
   methods: {
     async handleResume() {
       this.status = Status.uploading;
-
+      console.log('tag', 22222)
       const { uploadedList } = await this.verify(
         this.container.file.name,
         this.container.hash
@@ -193,7 +192,6 @@ export default {
     },
     handlePause() {
       this.status = Status.pause;
-
       this.requestList.forEach(xhr => xhr?.abort());
       this.requestList = [];
     },
@@ -215,7 +213,7 @@ export default {
 
     async sendRequest(urls, max=4,retrys=3) {
       console.log(urls,max)
-      
+      console.log('tag', 11111111)
       return new Promise((resolve,reject) => {
         const len = urls.length;
         let idx = 0;
@@ -226,7 +224,7 @@ export default {
           while (counter < len && max > 0) {
             max--; // 占用通道
             console.log(idx, "start");
-            const i = urls.findIndex(v=>v.status==Status.wait || v.status==Status.error )// 等待或者error
+            const i = urls.findIndex(v => v.status == Status.wait || v.status == Status.error )// 等待或者error
             urls[i].status = Status.uploading
             const form = urls[i].form;
             const index = urls[i].index;
@@ -236,11 +234,11 @@ export default {
             request({
               url: '/upload',
               data: form,
-              onProgress: this.createProgresshandler(this.chunks[index]),
+              onProgress: 100,
+              // onProgress: this.createProgresshandler(this.chunks[index]),
               requestList: this.requestList
             }).then(() => {
-               urls[i].status = Status.done
-
+              urls[i].status = Status.done
               max++; // 释放通道
               counter++;
               urls[counter].done=true
@@ -313,6 +311,7 @@ export default {
     },
     createProgresshandler(item) {
       return e => {
+        console.log('e', e)
         item.progress = parseInt(String((e.loaded / e.total) * 100));
       };
     },
@@ -501,9 +500,6 @@ export default {
         // if(time)
         count++
       }
-
-
-
     },
     format(num){
       if(num>1024*1024*1024){
@@ -517,19 +513,20 @@ export default {
       }
       return num+'B'
     },
+
     async handleUpload() {
       if (!this.container.file) return;
       this.status = Status.uploading;
       const chunks = this.createFileChunk(this.container.file);
-      console.log(chunks);
+      console.log(99999,chunks);
       // 计算哈希
       // this.container.hash = await this.calculateHashSync(chunks)
-      console.time("samplehash");
-      // 这样抽样，大概1个G1秒，如果还嫌慢，可以考虑分片+web-worker的方式
+      // console.time(8888,"samplehash");
+      // 这样抽样，大概1个G 1秒，如果还嫌慢，可以考虑分片+web-worker的方式
       // 这种方式偶尔会误判 不过大题效率不错
       // 可以考虑和全部的hash配合，因为samplehash不存在，就一定不存在，存在才有可能误判，有点像布隆过滤器
       this.container.hash = await this.calculateHashSample();
-      console.timeEnd("samplehash");
+      // console.timeEnd("samplehash");
 
       console.log("hashSample", this.container.hash);
 
@@ -548,6 +545,7 @@ export default {
       if (uploaded) {
         return this.$message.success("秒传:上传成功");
       }
+      console.log('6666666', chunks)
       this.chunks = chunks.map((chunk, index) => {
         const chunkName = this.container.hash + "-" + index;
         return {
@@ -559,6 +557,9 @@ export default {
           size: chunk.file.size
         };
       });
+      console.log('777777', this.chunks)
+      console.log('55555', uploadedList)
+
       // 传入已经存在的切片清单
       await this.uploadChunks(uploadedList);
     }

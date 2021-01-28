@@ -1,34 +1,37 @@
+/*
+ * @Author: your name
+ * @Date: 2021-01-22 10:23:23
+ * @LastEditTime: 2021-01-22 14:43:34
+ * @LastEditors: your name
+ * @Description: In User Settings Edit
+ * @FilePath: \新建文件夹\upload\server\controller.js
+ */
+
 const path = require('path')
 const fse = require("fs-extra")
 const multiparty = require("multiparty")
 const { resolvePost, pipeStream,extractExt,getUploadedList,mergeFiles } = require('./util')
 
-  
-
-
 class Controller {
-  constructor(uploadDir) {
+  constructor (uploadDir) {
     this.UPLOAD_DIR = uploadDir
   }
-  async mergeFileChunk(filePath, fileHash, size){
-    // cpmspe/pg)
+  async mergeFileChunk (filePath, fileHash, size) {
     const chunkDir = path.resolve(this.UPLOAD_DIR, fileHash)
     let chunkPaths = await fse.readdir(chunkDir)
     // 根据切片下标进行排序
     // 否则直接读取目录的获得的顺序可能会错乱
     chunkPaths
       .sort((a, b) => a.split("-")[1] - b.split("-")[1])
-    chunkPaths = chunkPaths.map(cp=>path.resolve(chunkDir, cp)) // 转成文件路径
+    chunkPaths = chunkPaths.map(cp => path.resolve(chunkDir, cp)) // 转成文件路径
     await mergeFiles(chunkPaths,filePath,size)
   }
-
 
   async handleVerify(req, res) {
     const data = await resolvePost(req)
     const { filename, hash } = data
     const ext = extractExt(filename)
     const filePath = path.resolve(this.UPLOAD_DIR, `${hash}${ext}`)
-
     // 文件是否存在
     let uploaded = false
     let uploadedList = []
@@ -44,12 +47,11 @@ class Controller {
         uploadedList // 过滤诡异的隐藏文件
       })
     )
-
   }
-  async handleMerge(req, res) {
 
+  async handleMerge(req, res) {
     const data = await resolvePost(req)
-    const {fileHash, filename, size } = data
+    const { fileHash, filename, size } = data
     const ext = extractExt(filename)
     const filePath = path.resolve(this.UPLOAD_DIR, `${fileHash}${ext}`)
     await this.mergeFileChunk(filePath, fileHash, size)
@@ -59,9 +61,8 @@ class Controller {
         message: "file merged success"
       })
     )
-
-  
   }
+
   async handleUpload(req, res) {
     const multipart = new multiparty.Form()
     multipart.parse(req, async (err, field, file) => {
@@ -85,13 +86,11 @@ class Controller {
         res.end()
         return 
       }
-
       // 文件存在直接返回
       if (fse.existsSync(filePath)) {
         res.end("file exist")
         return
       }
-
       if (!fse.existsSync(chunkDir)) {
         await fse.mkdirs(chunkDir)
       }
@@ -100,6 +99,5 @@ class Controller {
     })
   }
 }
-
 
 module.exports = Controller

@@ -1,3 +1,11 @@
+/*
+ * @Author: your name
+ * @Date: 2021-01-22 10:23:23
+ * @LastEditTime: 2021-01-25 08:30:53
+ * @LastEditors: Please set LastEditors
+ * @Description: In User Settings Edit
+ * @FilePath: \新建文件夹\upload\server\server.js
+ */
 const http = require("http")
 const path = require('path')
 const Controller = require('./controller')

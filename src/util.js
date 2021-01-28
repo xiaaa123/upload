@@ -1,5 +1,11 @@
-
-
+/*
+ * @Author: your name
+ * @Date: 2021-01-22 10:23:23
+ * @LastEditTime: 2021-01-22 13:58:27
+ * @LastEditors: Please set LastEditors
+ * @Description: In User Settings Edit
+ * @FilePath: \新建文件夹\upload\src\util.js
+ */
 
 const baseUrl = 'http://localhost:3000'
 export function request({
@@ -18,7 +24,6 @@ export function request({
             xhr.setRequestHeader(key, headers[key])
         );
         xhr.send(data);
-
         xhr.onreadystatechange = e => {
             if(xhr.readyState === 4) {
                 if(xhr.status === 200){

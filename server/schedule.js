@@ -1,3 +1,11 @@
+/*
+ * @Author: your name
+ * @Date: 2021-01-22 10:23:23
+ * @LastEditTime: 2021-01-22 14:16:35
+ * @LastEditors: Please set LastEditors
+ * @Description: In User Settings Edit
+ * @FilePath: \新建文件夹\upload\server\schedule.js
+ */
 const fse = require('fs-extra')
 const path = require('path')
 const schedule = require('node-schedule')
@@ -7,22 +15,22 @@ const schedule = require('node-schedule')
 function remove(file,stats){
     const now = new Date().getTime()
     const offset = now - stats.ctimeMs 
-    if(offset>1000*6){
+    if( offset > 1000 * 60 ) {
         // 大于60秒的碎片
         console.log(file,'过期了，删除')
         fse.unlinkSync(file)
     }
 }
 
-async function scan(dir,callback){
+async function scan(dir,callback) {
     const files = fse.readdirSync(dir)
-    files.forEach(filename=>{
+    files.forEach( filename => {
         const fileDir = path.resolve(dir,filename)
         const stats = fse.statSync(fileDir)
         if(stats.isDirectory()){
             return scan(fileDir,remove)
         }
-        if(callback){
+        if(callback) {
             callback(fileDir,stats)
         }
     })
@@ -36,11 +44,11 @@ async function scan(dir,callback){
 // │    │    └─────────────── hour (0 - 23)
 // │    └──────────────────── minute (0 - 59)
 // └───────────────────────── second (0 - 59, OPTIONAL)
+
 let start = function(UPLOAD_DIR){
     // 每3秒
     // '42 * * * *' 每小时的42分
-    // */5 * * * *  没五分钟
-
+    // */5 * * * *  每五分钟
     schedule.scheduleJob("*/3 * * * * *",function(){
         console.log('开始扫描')
         scan(UPLOAD_DIR)
